@@ -71,11 +71,11 @@ terraform init
 terraform apply
 ```
 2. **Конфигурация ВМ:** 
-
+```bash
 cd ansible
 python3 create_inventory.py > inventory/output.json
 ansible-playbook -i inventory/output.json site.yml
-
+```
 3. **Создание снапшотов:**
 
 ## 📷 Скриншоты
