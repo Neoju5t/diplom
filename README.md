@@ -65,11 +65,11 @@
 ## ⚙️ Деплой
 
 1. **Развёртывание инфраструктуры:**
-
+```bash
 cd terraform
 terraform init
 terraform apply
-
+```
 2. **Конфигурация ВМ:** 
 
 cd ansible
