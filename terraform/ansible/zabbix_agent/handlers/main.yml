@@ -1,0 +1,7 @@
+---
+- name: restart zabbix-agent
+  listen: "restart zabbix-agent"
+  become: true
+  service:
+    name: zabbix-agent
+    state: restarted

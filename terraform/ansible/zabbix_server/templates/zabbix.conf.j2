@@ -1,0 +1,32 @@
+<VirtualHost *:80>
+    ServerName {{ hostvars[inventory_hostname].ansible_host }}
+    
+    DocumentRoot /usr/share/zabbix/web
+    
+    Alias /zabbix /usr/share/zabbix
+
+    <Directory "/usr/share/zabbix">
+        Options FollowSymLinks
+        AllowOverride None
+        Require all granted
+        
+        <IfModule mod_php.c>
+            php_value max_execution_time 300
+            php_value memory_limit 128M
+            php_value post_max_size 16M
+            php_value upload_max_filesize 2M
+            php_value max_input_time 300
+            php_value max_input_vars 10000
+            php_value always_populate_raw_post_data -1
+            php_value date.timezone {{ timezone }}
+        </IfModule>
+    </Directory>
+
+    ErrorLog ${APACHE_LOG_DIR}/zabbix_error.log
+    CustomLog ${APACHE_LOG_DIR}/zabbix_access.log combined
+</VirtualHost>
+
+
+#<IfModule mod_php.c>
+#    php_admin_flag engine off
+#</IfModule>

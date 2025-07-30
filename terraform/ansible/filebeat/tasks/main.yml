@@ -1,0 +1,110 @@
+---
+- name: Install Docker dependencies
+  become: true
+  apt:
+    name:
+      - apt-transport-https
+      - ca-certificates
+      - curl
+      - software-properties-common
+      - gnupg
+      - lsb-release
+    state: present
+    update_cache: yes
+
+- name: Add Docker GPG key
+  become: true
+  apt_key:
+    url: "https://download.docker.com/linux/ubuntu/gpg"
+    state: present
+
+- name: Add Docker repository
+  become: true
+  apt_repository:
+    repo: "deb [arch=amd64] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable"
+    state: present
+    update_cache: yes
+
+- name: Install Docker components
+  become: true
+  apt:
+    name:
+      - docker-ce
+      - docker-ce-cli
+      - containerd.io
+    state: present
+
+- name: Update Docker to latest version
+  become: true
+  apt:
+    name:
+      - docker-ce
+      - docker-ce-cli
+      - containerd.io
+    state: latest
+    update_cache: yes
+
+# Очистка старых контейнеров и образов
+- name: Clean up existing Filebeat containers
+  become: true
+  shell: |
+    docker rm -f filebeat || true
+  args:
+    executable: /bin/bash
+  ignore_errors: yes
+  changed_when: false
+
+- name: Force remove existing Filebeat image
+  become: true
+  shell: |
+    docker rmi -f docker.elastic.co/beats/filebeat:8.12.2 || true
+  args:
+    executable: /bin/bash
+  ignore_errors: yes
+  changed_when: false
+
+# Подготовка директорий
+- name: Create directories for Filebeat
+  become: true
+  file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+  loop:
+    - /etc/filebeat
+    - /var/lib/filebeat
+
+# Копирование архива с образом
+- name: Copy Filebeat image archive
+  become: true
+  copy:
+    src: "{{ playbook_dir }}/roles/filebeat/files/filebeat-8.12.2.tar"
+    dest: /opt/filebeat-8.12.2.tar
+    mode: '0644'
+
+- name: Load Filebeat image from tar
+  become: true
+  command: docker load -i /opt/filebeat-8.12.2.tar
+  register: image_load_output
+  changed_when: "'Loaded image' in image_load_output.stdout"
+
+- name: Get loaded image ID
+  become: true
+  shell: |
+    docker load -i /opt/filebeat-8.12.2.tar | grep 'Loaded image ID:' | awk '{print $NF}'
+  register: loaded_image_id
+  changed_when: false
+
+- name: Tag loaded image with proper name
+  become: true
+  when: loaded_image_id.stdout != ""
+  shell: |
+    docker tag {{ loaded_image_id.stdout }} docker.elastic.co/beats/filebeat:8.12.2
+
+- name: Remove image archive
+  become: true
+  file:
+    path: /opt/filebeat-8.12.2.tar
+    state: absent

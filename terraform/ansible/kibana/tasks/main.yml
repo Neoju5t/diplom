@@ -1,0 +1,206 @@
+---
+- name: Ensure no apt locks
+  become: true
+  shell: |
+    sudo systemctl stop unattended-upgrades
+    sudo rm -f /var/lib/apt/lists/lock
+    sudo rm -f /var/lib/dpkg/lock*
+    sudo rm -f /var/cache/apt/archives/lock
+  args:
+    warn: false
+  ignore_errors: true
+  changed_when: false
+  
+- name: Install Nginx
+  become: true
+  apt:
+    name: nginx
+    state: present
+
+- name: Configure Nginx reverse proxy
+  become: true
+  template:
+    src: kibana-nginx.conf.j2
+    dest: /etc/nginx/sites-available/kibana
+  notify: restart nginx
+
+- name: Enable site
+  become: true
+  file:
+    src: /etc/nginx/sites-available/kibana
+    dest: /etc/nginx/sites-enabled/kibana
+    state: link
+  notify: restart nginx
+
+- name: Disable default site
+  become: true
+  file:
+    path: /etc/nginx/sites-enabled/default
+    state: absent
+  notify: restart nginx
+  
+- name: Install Docker dependencies
+  become: true
+  apt:
+    name:
+      - apt-transport-https
+      - ca-certificates
+      - curl
+      - software-properties-common
+      - gnupg-agent
+    state: present
+    update_cache: yes
+    force_apt_get: yes
+
+- name: Add Docker GPG key
+  become: true
+  apt_key:
+    url: https://download.docker.com/linux/ubuntu/gpg
+    state: present
+
+- name: Add Docker repository
+  become: true
+  apt_repository:
+    repo: "deb [arch=amd64] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable"
+    state: present
+    update_cache: yes
+
+- name: Install Docker
+  become: true
+  apt:
+    name:
+      - docker-ce
+      - docker-ce-cli
+      - containerd.io
+    state: present
+    install_recommends: no
+    force_apt_get: yes
+
+- name: Add ubuntu user to docker group
+  become: true
+  user:
+    name: ubuntu
+    groups: docker
+    append: yes
+
+- name: Start and enable Docker service
+  become: true
+  systemd:
+    name: docker
+    state: started
+    enabled: yes
+    daemon_reload: yes
+
+# Установка Docker Compose с проверкой
+- name: Install Docker Compose
+  become: true
+  get_url:
+    url: https://github.com/docker/compose/releases/download/v2.24.7/docker-compose-linux-x86_64
+    dest: /usr/local/bin/docker-compose
+    mode: '0755'
+    validate_certs: no
+
+- name: Verify Docker Compose installation
+  become: true
+  command: docker-compose --version
+  register: compose_check
+  changed_when: false
+  ignore_errors: true
+
+- name: Reinstall Docker Compose if needed
+  become: true
+  block:
+    - name: Remove broken installation
+      file:
+        path: /usr/local/bin/docker-compose
+        state: absent
+      ignore_errors: true
+      
+    - name: Install Docker Compose
+      get_url:
+        url: https://github.com/docker/compose/releases/download/v2.24.7/docker-compose-linux-x86_64
+        dest: /usr/local/bin/docker-compose
+        mode: '0755'
+        validate_certs: no
+        
+    - name: Verify installation
+      command: docker-compose --version
+      register: compose_verify
+      changed_when: false
+  when: compose_check.rc != 0
+
+- name: Create application directory
+  become: true
+  file:
+    path: /opt/kibana
+    state: directory
+    owner: ubuntu
+    group: ubuntu
+    mode: '0755'
+
+- name: Copy Kibana image archive
+  become: true
+  copy:
+    src: kibana-8.12.2.tar
+    dest: /opt/kibana/kibana-8.12.2.tar
+    mode: '0644'
+
+- name: Load Kibana image
+  become: true
+  command: docker load -i /opt/kibana/kibana-8.12.2.tar
+  register: image_load
+  changed_when: "'Loaded' in image_load.stdout"
+
+- name: Tag Kibana image
+  become: true
+  command: docker tag docker.elastic.co/kibana/kibana:8.12.2 local-kibana:8.12.2
+  when: image_load.changed
+
+- name: Deploy Kibana compose file
+  become: true
+  template:
+    src: kibana-compose.j2
+    dest: /opt/kibana/docker-compose.yml
+    owner: ubuntu
+    group: ubuntu
+    mode: '0644'
+
+- name: Start Kibana container
+  become: true
+  command: docker-compose -f /opt/kibana/docker-compose.yml up -d
+  args:
+    chdir: /opt/kibana
+  register: compose_up
+  changed_when: "'Creating' in compose_up.stdout or 'Starting' in compose_up.stdout"
+
+- name: Get detailed Kibana logs
+  become: true
+  command: docker logs --tail 200 kibana
+  register: detailed_logs
+  changed_when: false
+  ignore_errors: true
+  retries: 3
+  delay: 5
+
+- name: Display detailed logs
+  debug:
+    msg: "Detailed Kibana logs:\n{{ detailed_logs.stdout }}"
+  when: detailed_logs.stdout != ''
+
+- name: Check Elasticsearch connection from host
+  become: true
+  command: curl -s -o /dev/null -w "%{http_code}" http://{{ hostvars[groups['elastic'][0]].ansible_host }}:9200
+  register: es_host_check
+  changed_when: false
+  retries: 10
+  delay: 10
+  until: es_host_check.stdout == "200"
+
+- name: Check container health
+  become: true
+  command: docker inspect --format '{% raw %}{{ .State.Health.Status }}{% endraw %}' kibana
+  register: health_status
+  changed_when: false
+  retries: 10
+  delay: 15
+  until: health_status.stdout != 'starting'

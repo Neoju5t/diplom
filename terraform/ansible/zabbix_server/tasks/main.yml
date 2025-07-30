@@ -1,0 +1,494 @@
+---
+- name: Stop and disable unattended-upgrades
+  become: true
+  block:
+    - name: Kill unattended-upgrades process
+      shell: |
+        pkill -f unattended-upgrade || true
+        sleep 2
+        pgrep -f unattended-upgrade && pkill -9 -f unattended-upgrade || true
+      args:
+        executable: /bin/bash
+      register: kill_result
+      changed_when: kill_result.rc == 0
+      ignore_errors: true
+
+    - name: Stop unattended-upgrades service
+      systemd:
+        name: unattended-upgrades
+        state: stopped
+        enabled: no
+      register: stop_service
+
+    - name: Remove lock files
+      file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /var/lib/dpkg/lock-frontend
+        - /var/lib/dpkg/lock
+        - /var/cache/apt/archives/lock
+      ignore_errors: true
+
+    - name: Ensure no apt processes are running
+      shell: |
+        while fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1; do
+          sleep 1
+        done
+        exit 0
+      args:
+        executable: /bin/bash
+      changed_when: false
+
+  always:
+    - name: Force apt cache update
+      apt:
+        update_cache: yes
+        force_apt_get: yes
+      register: apt_update
+      until: apt_update is succeeded
+      retries: 5
+      delay: 2
+
+- name: Clean up conflicting Zabbix repositories
+  become: true
+  shell: |
+    # Освобождаем lock перед выполнением
+    systemctl stop apt-daily.service || true
+    systemctl stop apt-daily.timer || true
+    systemctl stop apt-daily-upgrade.service || true
+    systemctl stop apt-daily-upgrade.timer || true
+    
+    rm -f /etc/apt/sources.list.d/*zabbix*
+    rm -f /etc/apt/trusted.gpg.d/zabbix.gpg
+    rm -f /etc/apt/trusted.gpg.d/zabbix.gpg.asc
+    apt-get update -q
+  args:
+    executable: /bin/bash
+  ignore_errors: true
+  changed_when: false
+
+- name: Install base dependencies
+  become: true
+  apt:
+    name:
+      - wget
+      - gnupg
+      - software-properties-common
+      - ca-certificates
+    state: present
+    update_cache: yes
+    lock_timeout: 600  
+
+- name: Create keyrings directory
+  become: true
+  file:
+    path: /etc/apt/keyrings
+    state: directory
+    mode: 0755
+
+- name: Add PostgreSQL GPG key
+  become: true
+  get_url:
+    url: "https://www.postgresql.org/media/keys/ACCC4CF8.asc"
+    dest: /etc/apt/keyrings/postgresql.asc
+    mode: 0644
+    validate_certs: yes
+
+- name: Add PostgreSQL repository
+  become: true
+  apt_repository:
+    repo: "deb [signed-by=/etc/apt/keyrings/postgresql.asc] https://apt.postgresql.org/pub/repos/apt {{ ansible_distribution_release }}-pgdg main"
+    state: present
+    update_cache: yes
+
+- name: Install PostgreSQL and Python dependencies
+  become: true
+  apt:
+    name:
+      - postgresql-15
+      - postgresql-client-15
+      - python3-psycopg2
+    state: present
+    update_cache: yes
+    lock_timeout: 600
+
+- name: Start and enable PostgreSQL
+  become: true
+  service:
+    name: postgresql
+    state: started
+    enabled: yes
+
+- name: Set timezone
+  become: true
+  timezone:
+    name: "{{ timezone | default('UTC') }}"
+
+- name: Configure PostgreSQL access
+  become: true
+  block:
+    - name: Ensure pg_hba.conf has required access rules
+      lineinfile:
+        path: /etc/postgresql/15/main/pg_hba.conf
+        create: false
+        state: present
+        insertafter: EOF
+        line: "{{ item }}"
+      loop:
+        - "host    all             all             127.0.0.1/32            md5"
+        - "host    zabbix          zabbix          127.0.0.1/32            md5"
+        - "host    zabbix          zabbix          ::1/128                 md5"
+        - "local   all             postgres                                peer"
+  notify: restart postgresql
+
+- name: Allow TCP connections
+  become: true
+  lineinfile:
+    path: /etc/postgresql/15/main/postgresql.conf
+    regexp: "^#?listen_addresses"
+    line: "listen_addresses = 'localhost'"
+  notify: restart postgresql
+
+- name: Apply PostgreSQL configuration changes
+  become: true
+  service:
+    name: postgresql
+    state: restarted
+
+- name: Create Zabbix user
+  become: true
+  shell: |
+    sudo -u postgres psql -c "CREATE USER zabbix WITH CREATEDB PASSWORD '{{ postgres_password }}';"
+  args:
+    executable: /bin/bash
+  register: create_user
+  changed_when: create_user.rc == 0
+  failed_when: create_user.rc != 0 and 'already exists' not in create_user.stderr
+  ignore_errors: true
+
+- name: Create Zabbix database
+  become: true
+  shell: |
+    sudo -u postgres createdb -O zabbix -E UTF8 -T template0 zabbix
+  args:
+    executable: /bin/bash
+  register: create_db
+  changed_when: create_db.rc == 0
+  failed_when: create_db.rc != 0 and 'already exists' not in create_db.stderr
+  ignore_errors: true
+
+- name: Grant privileges
+  become: true
+  shell: |
+    sudo -u postgres psql -c "ALTER USER zabbix WITH SUPERUSER; GRANT ALL PRIVILEGES ON DATABASE zabbix TO zabbix;"
+  args:
+    executable: /bin/bash
+  when: create_db.rc == 0 or (create_db.rc !=0 and 'already exists' in create_db.stderr)
+
+# Надежный импорт схемы с проверкой
+- name: Import Zabbix database schema
+  become: true
+  shell: |
+    # Создаем временный файл со схемой
+    zcat /usr/share/zabbix-sql-scripts/postgresql/server.sql.gz > /tmp/zabbix_schema.sql
+    
+    # Импортируем схему
+    sudo -u postgres psql -d zabbix -f /tmp/zabbix_schema.sql
+    
+    # Проверяем наличие таблицы users
+    sudo -u postgres psql -d zabbix -c "SELECT 1 FROM users LIMIT 1"
+    
+    # Очищаем временный файл
+    rm -f /tmp/zabbix_schema.sql
+  args:
+    executable: /bin/bash
+  register: schema_import
+  changed_when: "'SELECT 1' in schema_import.stdout"
+  failed_when: 
+    - "schema_import.rc != 0"
+    - "'ERROR' in schema_import.stdout"
+
+- name: Show schema import result
+  debug:
+    msg: "Schema import output: {{ schema_import.stdout }}"
+
+- name: Add Zabbix repository key
+  become: true
+  get_url:
+    url: "https://repo.zabbix.com/zabbix-official-repo.key"
+    dest: /etc/apt/keyrings/zabbix.asc
+    mode: 0644
+    validate_certs: yes
+
+- name: Add Zabbix repository
+  become: true
+  apt_repository:
+    repo: "deb [signed-by=/etc/apt/keyrings/zabbix.asc] https://repo.zabbix.com/zabbix/{{ zabbix_version }}/ubuntu {{ ansible_distribution_release }} main"
+    state: present
+    update_cache: yes
+
+- name: Install PHP and required modules
+  become: true
+  apt:
+    name:
+      - php
+      - php-cli
+      - libapache2-mod-php
+      - php-gd
+      - php-xml
+      - php-bcmath
+      - php-mbstring
+      - php-ldap
+      - php-snmp
+      - php-curl
+      - php-zip
+      - php-pgsql
+    state: present
+    update_cache: yes
+
+- name: Get installed PHP version
+  become: true
+  shell: php -r 'echo PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION;'
+  register: php_version
+  changed_when: false
+
+- name: Enable PHP module in Apache
+  become: true
+  command: "a2enmod php{{ php_version.stdout }}"
+  notify: restart apache2
+
+- name: Install Zabbix server components
+  become: true
+  apt:
+    name:
+      - zabbix-server-pgsql
+      - zabbix-frontend-php
+      - zabbix-apache-conf
+      - zabbix-sql-scripts
+    state: present
+
+- name: Ensure Zabbix configuration directory exists
+  become: true
+  file:
+    path: /etc/zabbix
+    state: directory
+    owner: root
+    group: root
+    mode: 0755
+
+- name: Create Zabbix system user and group
+  become: true
+  user:
+    name: zabbix
+    system: yes
+    create_home: no
+    comment: "Zabbix Monitoring System"
+  when: "'zabbix' not in ansible_facts.get('users', {})"
+
+- name: Ensure required directories exist
+  become: true
+  file:
+    path: "{{ item }}"
+    state: directory
+    owner: zabbix
+    group: zabbix
+    mode: 0755
+  loop:
+    - /run/zabbix
+    - /var/log/zabbix
+
+- name: Configure Zabbix server
+  become: true
+  template:
+    src: zabbix_server.conf.j2
+    dest: /etc/zabbix/zabbix_server.conf
+    owner: zabbix
+    group: zabbix
+    mode: '0640'
+  notify: restart zabbix-server
+
+- name: Verify database connection
+  become: true
+  shell: |
+    PGPASSWORD="{{ postgres_password }}" psql -h localhost -U zabbix -d zabbix -c "SELECT 1"
+  register: db_check
+  changed_when: false
+  failed_when: db_check.rc != 0
+
+- name: Show database connection error
+  debug:
+    msg: "Database connection failed: {{ db_check.stderr }}"
+  when: db_check.rc != 0
+
+- name: Configure PHP settings for Apache
+  become: true
+  template:
+    src: zabbix.conf.j2
+    dest: /etc/apache2/conf-available/zabbix.conf
+    owner: root
+    group: root
+    mode: '0644'
+  notify: restart apache2
+
+- name: Enable Zabbix configuration
+  become: true
+  file:
+    src: /etc/apache2/conf-available/zabbix.conf
+    dest: /etc/apache2/conf-enabled/zabbix.conf
+    state: link
+  notify: restart apache2
+
+- name: Disable default site
+  become: true
+  command: a2dissite 000-default
+  notify: restart apache2
+
+- name: Verify Zabbix frontend files
+  become: true
+  stat:
+    path: /usr/share/zabbix/index.php
+  register: zabbix_files
+
+- name: Check Apache configuration syntax
+  become: true
+  command: apache2ctl configtest
+  register: apache_config_test
+  changed_when: false
+  ignore_errors: true
+
+- name: Show Apache configuration errors
+  debug:
+    msg: "Apache configuration error: {{ apache_config_test.stderr }}"
+  when: apache_config_test.rc != 0
+
+- name: View PostgreSQL logs
+  become: true
+  command: tail -n 50 /var/log/postgresql/postgresql-15-main.log
+  register: postgres_log
+  changed_when: false
+  when: db_check.rc != 0
+
+- name: Show PostgreSQL log
+  debug:
+    msg: "PostgreSQL log: {{ postgres_log.stdout }}"
+  when: db_check.rc != 0
+
+- name: Restart PostgreSQL
+  become: true
+  service:
+    name: postgresql
+    state: restarted
+
+- name: Start Zabbix server service
+  become: true
+  service:
+    name: zabbix-server
+    state: started
+    enabled: yes
+  register: start_zabbix
+  ignore_errors: yes
+
+# Расширенная диагностика для Zabbix server
+- name: Check Zabbix server status
+  become: true
+  command: systemctl status zabbix-server --no-pager
+  register: zabbix_status
+  changed_when: false
+  ignore_errors: true
+  when: start_zabbix is defined
+
+- name: View Zabbix server logs (journalctl)
+  become: true
+  command: journalctl -u zabbix-server -n 100 --no-pager
+  register: zabbix_journal_log
+  changed_when: false
+  when: start_zabbix is defined
+
+- name: Show Zabbix server journal log
+  debug:
+    msg: "Zabbix server journal log: {{ zabbix_journal_log.stdout }}"
+  when: 
+    - start_zabbix is defined
+    - zabbix_journal_log.stdout is defined
+
+- name: View Zabbix server log file
+  become: true
+  command: tail -n 100 /var/log/zabbix/zabbix_server.log
+  register: zabbix_file_log
+  changed_when: false
+  when: start_zabbix is defined
+
+- name: Show Zabbix server file log
+  debug:
+    msg: "Zabbix server file log: {{ zabbix_file_log.stdout }}"
+  when: 
+    - start_zabbix is defined
+    - zabbix_file_log.stdout is defined
+
+- name: Verify Zabbix server config file
+  become: true
+  command: cat /etc/zabbix/zabbix_server.conf
+  register: zabbix_config
+  changed_when: false
+  when: start_zabbix is defined
+
+- name: Show Zabbix server configuration
+  debug:
+    msg: "Zabbix server config: {{ zabbix_config.stdout }}"
+  when: 
+    - start_zabbix is defined
+    - zabbix_config.stdout is defined
+
+- name: Check Zabbix server process (reliable)
+  become: true
+  shell: |
+    ps aux | grep '[z]abbix_server' || true
+  register: zabbix_process
+  changed_when: false
+  when: start_zabbix is defined
+
+- name: Show Zabbix server processes
+  debug:
+    msg: "Zabbix processes: {{ zabbix_process.stdout_lines }}"
+  when: 
+    - start_zabbix is defined
+    - zabbix_process.stdout is defined
+
+- name: Verify DB connection as zabbix user
+  become: true
+  shell: |
+    sudo -u zabbix PGPASSWORD="{{ postgres_password }}" psql -h localhost -U zabbix -d zabbix -c "SELECT 1"
+  register: zabbix_db_check
+  changed_when: false
+  when: start_zabbix is defined
+
+- name: Show Zabbix DB connection result
+  debug:
+    msg: "Zabbix DB connection: {{ zabbix_db_check.stdout }}"
+  when: 
+    - start_zabbix is defined
+    - zabbix_db_check.stdout is defined
+
+- name: Verify Zabbix server port
+  become: true
+  wait_for:
+    port: 10051
+    delay: 10
+    timeout: 300  # Увеличенный таймаут
+  when: start_zabbix is defined
+
+# Аварийный выход, если Zabbix server не запустился
+- name: Fail if Zabbix server not running
+  fail:
+    msg: "Zabbix server failed to start. Check logs above for details."
+  when: >
+    start_zabbix is defined and 
+    (start_zabbix.failed or zabbix_status.rc != 0)
+
+- name: Start Apache service
+  become: true
+  service:
+    name: apache2
+    state: started
+    enabled: yes

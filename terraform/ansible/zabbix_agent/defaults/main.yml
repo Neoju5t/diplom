@@ -1,0 +1,6 @@
+---
+# Версия Zabbix
+zabbix_version: "6.4"
+
+# IP-адрес Zabbix сервера
+zabbix_server_ip: "192.168.10.24"

@@ -1,0 +1,184 @@
+---
+- name: Wait for apt lock to be released
+  become: true
+  shell: |
+    while fuser /var/lib/apt/lists/lock >/dev/null 2>&1; do
+      sleep 1
+    done
+    while fuser /var/lib/dpkg/lock >/dev/null 2>&1; do
+      sleep 1
+    done
+  args:
+    executable: /bin/bash
+  register: apt_lock_wait
+  until: apt_lock_wait.rc == 0
+  retries: 30
+  delay: 2
+  changed_when: false
+
+- name: Install required system packages
+  become: true
+  apt:
+    name:
+      - apt-transport-https
+      - ca-certificates
+      - curl
+      - software-properties-common
+      - gnupg
+      - lsb-release
+    state: present
+    update_cache: yes
+
+- name: Add Docker GPG key
+  become: true
+  apt_key:
+    url: "https://download.docker.com/linux/ubuntu/gpg"
+    state: present
+
+- name: Add Docker repository
+  become: true
+  apt_repository:
+    repo: "deb [arch=amd64] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable"
+    state: present
+    update_cache: yes
+
+- name: Install Docker components
+  become: true
+  apt:
+    name: 
+      - docker-ce
+      - docker-ce-cli
+      - containerd.io
+    state: present
+
+- name: Install Docker Compose
+  become: true
+  get_url:
+    url: "https://github.com/docker/compose/releases/download/v2.27.1/docker-compose-linux-x86_64"
+    dest: /usr/local/bin/docker-compose
+    mode: '0755'
+
+- name: Ensure Docker service is running
+  become: true
+  service:
+    name: docker
+    state: started
+    enabled: yes
+
+- name: Add ubuntu user to docker group
+  become: true
+  user:
+    name: ubuntu
+    groups: docker
+    append: yes
+
+- name: Configure virtual memory for Elasticsearch
+  become: true
+  sysctl:
+    name: vm.max_map_count
+    value: "262144"
+    state: present
+    reload: yes
+
+- name: Create Elasticsearch data directory
+  become: true
+  file:
+    path: /var/lib/elasticsearch
+    state: directory
+    owner: 1000
+    group: 1000
+    mode: '0755'
+
+- name: Create application directory
+  become: true
+  file:
+    path: /opt/elasticsearch
+    state: directory
+    owner: ubuntu
+    group: ubuntu
+    mode: '0755'
+
+- name: Remove any existing Elasticsearch containers
+  become: true
+  shell: |
+    if docker container inspect elasticsearch >/dev/null 2>&1; then
+      docker stop elasticsearch
+      docker rm elasticsearch
+    fi
+  args:
+    executable: /bin/bash
+  ignore_errors: yes
+  register: container_cleanup
+  changed_when: container_cleanup.rc == 0
+
+- name: Deploy Docker Compose file
+  become: true
+  copy:
+    dest: /opt/elasticsearch/docker-compose.yml
+    content: |
+      version: '3.8'
+      services:
+        elasticsearch:
+          image: elasticsearch:8.12.2
+          container_name: elasticsearch
+          environment:
+            - discovery.type=single-node
+            - ES_JAVA_OPTS=-Xms1g -Xmx1g
+            - xpack.security.enabled=false
+          volumes:
+            - /var/lib/elasticsearch:/usr/share/elasticsearch/data
+          ports:
+            - "9200:9200"
+            - "9300:9300"
+          restart: always
+          ulimits:
+            memlock:
+              soft: -1
+              hard: -1
+
+- name: Pull Elasticsearch image
+  become: true
+  docker_image:
+    name: elasticsearch:8.12.2
+    source: pull
+    state: present
+    timeout: 600
+  register: pull_result
+  until: pull_result is success
+  retries: 3
+  delay: 60
+
+- name: Start Elasticsearch container
+  become: true
+  command: docker-compose up -d --force-recreate
+  args:
+    chdir: /opt/elasticsearch
+  register: compose_up
+  retries: 3
+  delay: 15
+  until: compose_up.rc == 0
+
+- name: Verify Elasticsearch availability
+  become: true
+  wait_for:
+    port: 9200
+    delay: 20
+    timeout: 300
+
+- name: Check cluster health
+  become: true
+  uri:
+    url: http://localhost:9200/_cluster/health
+    method: GET
+    return_content: yes
+    status_code: 200
+  register: es_health
+  ignore_errors: yes
+  until: >
+    (es_health is not failed) and
+    (es_health.status is defined) and
+    (es_health.status == 200) and
+    (es_health.json.status is defined) and
+    (es_health.json.status in ['yellow', 'green'])
+  retries: 20
+  delay: 15

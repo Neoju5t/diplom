@@ -1,0 +1,89 @@
+---
+- name: Wait for apt lock to be released
+  become: true
+  shell: |
+    while fuser /var/lib/apt/lists/lock >/dev/null 2>&1; do
+      sleep 1
+    done
+    while fuser /var/lib/dpkg/lock >/dev/null 2>&1; do
+      sleep 1
+    done
+  args:
+    executable: /bin/bash
+  register: apt_lock_wait
+  until: apt_lock_wait.rc == 0
+  retries: 30
+  delay: 2
+  changed_when: false
+
+- name: Install nginx
+  become: true
+  apt:
+    name: nginx
+    state: present
+    update_cache: yes
+
+- name: Remove default nginx page
+  become: true
+  file:
+    path: /var/www/html/index.nginx-debian.html
+    state: absent
+
+- name: Ensure site directory exists
+  become: true
+  file:
+    path: /var/www/html
+    state: directory
+    owner: www-data
+    group: www-data
+    mode: '0755'
+
+- name: Copy site files
+  become: true
+  copy:
+    src: "{{ item }}"
+    dest: /var/www/html/
+    owner: www-data
+    group: www-data
+    mode: '0644'
+  loop:
+    - site/index.html
+    - site/about.html
+    - site/styles.css
+
+- name: Ensure images directory exists
+  become: true
+  file:
+    path: /var/www/html/images
+    state: directory
+    owner: www-data
+    group: www-data
+    mode: '0755'
+
+- name: Copy images
+  become: true
+  copy:
+    src: images/logo.png
+    dest: /var/www/html/images/
+    owner: www-data
+    group: www-data
+    mode: '0644'
+
+- name: Configure nginx to use our site
+  become: true
+  template:
+    src: default-site.j2
+    dest: /etc/nginx/sites-available/default
+    owner: root
+    group: root
+    mode: '0644'
+  notify: restart nginx
+
+- name: Set correct permissions for nginx logs
+  become: true
+  file:
+    path: /var/log/nginx
+    owner: root
+    group: adm
+    mode: '0755'
+    recurse: yes

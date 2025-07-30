@@ -1,0 +1,33 @@
+all:
+  vars:
+    ansible_user: ubuntu
+    ansible_ssh_private_key_file: ~/.ssh/id_rsa_diploma
+    ansible_ssh_common_args: -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o GlobalKnownHostsFile=/dev/null
+  children:
+    bastion:
+      hosts:
+        bastion.ru-central1.internal:
+          ansible_host: 84.201.134.58
+    web:
+      hosts:
+        web-0.ru-central1.internal:
+          ansible_host: 192.168.20.32
+          ansible_ssh_common_args: -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o GlobalKnownHostsFile=/dev/null -o ProxyCommand="ssh -W %h:%p -q ubuntu@84.201.134.58"
+        web-1.ru-central1.internal:
+          ansible_host: 192.168.20.10
+          ansible_ssh_common_args: -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o GlobalKnownHostsFile=/dev/null -o ProxyCommand="ssh -W %h:%p -q ubuntu@84.201.134.58"
+    elastic:
+      hosts:
+        elastic.ru-central1.internal:
+          ansible_host: 192.168.20.33
+          ansible_ssh_common_args: -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o GlobalKnownHostsFile=/dev/null -o ProxyCommand="ssh -W %h:%p -q ubuntu@84.201.134.58"
+    kibana:
+      hosts:
+        kibana.ru-central1.internal:
+          ansible_host: 192.168.10.9
+          ansible_ssh_common_args: -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o GlobalKnownHostsFile=/dev/null -o ProxyCommand="ssh -W %h:%p -q ubuntu@84.201.134.58"
+    zabbix:
+      hosts:
+        zabbix.ru-central1.internal:
+          ansible_host: 192.168.10.5
+          ansible_ssh_common_args: -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o GlobalKnownHostsFile=/dev/null -o ProxyCommand="ssh -W %h:%p -q ubuntu@84.201.134.58"

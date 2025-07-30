@@ -1,0 +1,32 @@
+---
+- name: Explicit restart of Zabbix agent
+  become: true
+  block:
+    - name: Restart Zabbix agent
+      service:
+        name: zabbix-agent
+        state: restarted
+        enabled: yes
+      
+    - name: Verify Zabbix agent status
+      command: systemctl is-active zabbix-agent
+      register: service_status
+      changed_when: false
+      ignore_errors: true
+  
+  rescue:
+    - name: Collect Zabbix agent logs
+      command: journalctl -u zabbix-agent -n 50 --no-pager
+      register: zabbix_logs
+      changed_when: false
+      
+    - name: Display error logs
+      debug:
+        msg: |
+          ZABBIX AGENT FAILED TO START (EXPLICIT RESTART)
+          Logs:
+          {{ zabbix_logs.stdout | default('No logs available') }}
+          
+    - name: Fail task with error message
+      fail:
+        msg: "Failed to restart Zabbix agent. See logs above for details."

@@ -1,0 +1,110 @@
+---
+- name: Install dependencies
+  become: true
+  apt:
+    name:
+      - gnupg
+      - wget
+    state: present
+
+- name: Remove old Zabbix repository key method
+  become: true
+  apt_key:
+    url: "https://repo.zabbix.com/zabbix-official-repo.key"
+    state: absent
+
+- name: Create keyrings directory
+  become: true
+  file:
+    path: /etc/apt/keyrings
+    state: directory
+    mode: 0755
+
+- name: Add Zabbix repository key
+  become: true
+  get_url:
+    url: "https://repo.zabbix.com/zabbix-official-repo.key"
+    dest: /etc/apt/keyrings/zabbix.asc
+    mode: 0644
+
+- name: Remove old Zabbix repository
+  become: true
+  apt_repository:
+    repo: "deb https://repo.zabbix.com/zabbix/{{ zabbix_version }}/ubuntu {{ ansible_distribution_release }} main"
+    state: absent
+
+- name: Add Zabbix repository
+  become: true
+  apt_repository:
+    repo: "deb [signed-by=/etc/apt/keyrings/zabbix.asc] https://repo.zabbix.com/zabbix/{{ zabbix_version }}/ubuntu {{ ansible_distribution_release }} main"
+    state: present
+    update_cache: yes
+
+- name: Install Zabbix agent
+  become: true
+  apt:
+    name: zabbix-agent
+    state: present
+
+- name: Ensure Zabbix agent directory exists
+  become: true
+  file:
+    path: /etc/zabbix/zabbix_agentd.d
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Display zabbix_server_ip value
+  debug:
+    var: zabbix_server_ip
+
+- name: Wait for Zabbix server to be ready
+  wait_for:
+    host: "{{ zabbix_server_ip }}"
+    port: 10051
+    timeout: 30
+    delay: 10
+    state: started
+  register: port_check
+  retries: 10
+  delay: 15
+  until: port_check is success
+  changed_when: false
+  run_once: true
+  delegate_to: localhost
+
+- name: Configure Zabbix agent
+  become: true
+  template:
+    src: zabbix_agentd.conf.j2
+    dest: /etc/zabbix/zabbix_agentd.conf
+    owner: root
+    group: root
+    mode: '0644'
+  notify: restart zabbix-agent
+
+- name: Check config file content
+  command: cat /etc/zabbix/zabbix_agentd.conf
+  register: config_content
+  changed_when: false
+  ignore_errors: true
+
+- name: Display first 10 lines of config
+  debug:
+    msg: "{{ config_content.stdout_lines[0:10] }}"
+
+- name: Validate Zabbix agent configuration
+  become: true
+  command: zabbix_agentd -c /etc/zabbix/zabbix_agentd.conf -p
+  register: config_test
+  changed_when: false
+  failed_when: 
+    - config_test.rc != 0
+    - "'configuration check failed' not in config_test.stderr"
+  notify: restart zabbix-agent
+
+- name: Display detailed configuration errors
+  debug:
+    msg: "Zabbix agent configuration error: {{ config_test.stderr }}"
+  when: config_test.rc != 0
