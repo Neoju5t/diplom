@@ -1,0 +1,186 @@
+---
+- name: Configure web servers
+  hosts: web
+  roles:
+    - nginx
+
+- name: Configure Elasticsearch
+  hosts: elastic
+  roles:
+    - elasticsearch 
+
+- name: Check Elasticsearch connectivity from Kibana
+  hosts: kibana
+  tasks:
+    - name: Test connection to Elasticsearch
+      shell: >
+        curl -s -o /dev/null -w "%{http_code}" 
+        http://{{ hostvars[groups['elastic'][0]].ansible_host }}:9200
+      register: elastic_check
+      until: elastic_check.stdout == "200"
+      retries: 10
+      delay: 10
+      changed_when: false
+
+- name: Configure Kibana
+  hosts: kibana
+  gather_facts: true
+  tasks:
+    - name: Ensure SSH keys are added
+      debug:
+        msg: "Using ProxyJump through {{ hostvars['bastion.ru-central1.internal']['ansible_host'] }}"
+        
+    - name: Check if host is reachable
+      wait_for_connection:
+        timeout: 60
+      ignore_errors: true
+      register: connection_check
+      
+    - name: Configure Kibana
+      include_role:
+        name: kibana
+      when: connection_check is success
+      
+- name: Configure Zabbix server
+  hosts: zabbix
+  become: true
+  vars:
+    zabbix_version: "6.4"
+    postgres_password: "your_secure_password"
+  roles:
+    - role: zabbix_server
+
+- name: Configure Zabbix Agents
+  hosts: all:!bastion
+  roles:
+    - role: zabbix_agent
+  vars:
+    zabbix_server_ip: "{{ hostvars['zabbix.ru-central1.internal']['ansible_host'] }}"
+
+- name: Install Filebeat on web servers
+  hosts: web
+  tasks:
+    # Установка Docker
+    - name: Install Docker dependencies
+      become: true
+      apt:
+        name:
+          - apt-transport-https
+          - ca-certificates
+          - curl
+          - software-properties-common
+          - gnupg
+          - lsb-release
+        state: present
+        update_cache: yes
+
+    - name: Add Docker GPG key
+      become: true
+      apt_key:
+        url: "https://download.docker.com/linux/ubuntu/gpg"
+        state: present
+
+    - name: Add Docker repository
+      become: true
+      apt_repository:
+        repo: "deb [arch=amd64] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable"
+        state: present
+        update_cache: yes
+
+    - name: Install Docker components
+      become: true
+      apt:
+        name: 
+          - docker-ce
+          - docker-ce-cli
+          - containerd.io
+        state: present
+
+    - name: Update Docker to latest version
+      become: true
+      apt:
+        name:
+          - docker-ce
+          - docker-ce-cli
+          - containerd.io
+        state: latest
+        update_cache: yes
+
+    # Очистка существующих контейнеров и образов
+    - name: Clean up existing Filebeat containers
+      become: true
+      shell: |
+        docker rm -f filebeat || true
+      args:
+        executable: /bin/bash
+      ignore_errors: yes
+      changed_when: false
+
+    - name: Force remove existing Filebeat image
+      become: true
+      shell: |
+        docker rmi -f docker.elastic.co/beats/filebeat:8.12.2 || true
+      args:
+        executable: /bin/bash
+      ignore_errors: yes
+      changed_when: false
+
+    # Использование локального образа вместо загрузки из репозитория
+    - name: Create directories for Filebeat
+      become: true
+      file:
+        path: "{{ item }}"
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+      loop:
+        - /etc/filebeat
+        - /var/lib/filebeat
+
+    - name: Copy Filebeat image archive
+      become: true
+      copy:
+        src: "{{ playbook_dir }}/roles/filebeat/files/filebeat-8.12.2.tar"
+        dest: /opt/filebeat-8.12.2.tar
+        mode: '0644'
+
+    - name: Load Filebeat image with platform
+      become: true
+      command: >
+        docker load --platform linux/amd64 -i /opt/filebeat-8.12.2.tar
+      register: image_load
+      changed_when: "'Loaded' in image_load.stdout"
+
+
+    - name: Remove image archive
+      become: true
+      file:
+        path: /opt/filebeat-8.12.2.tar
+        state: absent
+
+    - name: Configure Filebeat
+      become: true
+      template:
+        src: "{{ playbook_dir }}/roles/filebeat/templates/filebeat.yml.j2"
+        dest: /etc/filebeat/filebeat.yml
+        owner: root
+        group: root
+        mode: '0640'
+
+    # Запуск контейнера с явным указанием платформы
+    - name: Run Filebeat container
+      become: true
+      docker_container:
+        name: filebeat
+        image: docker.elastic.co/beats/filebeat:8.12.2
+        state: started
+        restart_policy: unless-stopped
+        volumes:
+          - /etc/filebeat/filebeat.yml:/usr/share/filebeat/filebeat.yml
+          - /var/lib/filebeat:/usr/share/filebeat/data
+          - /var/log/nginx:/var/log/nginx:ro
+        user: root
+        env:
+          ELASTICSEARCH_HOSTS: "http://{{ hostvars[groups['elastic'][0]].ansible_host }}:9200"
+        platform: linux/amd64  # Критически важный параметр

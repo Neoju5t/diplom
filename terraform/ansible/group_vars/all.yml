@@ -1,0 +1,12 @@
+ansible_ssh_common_args: >
+  -o UserKnownHostsFile={{ playbook_dir }}/known_hosts
+ansible_user: ubuntu
+ansible_ssh_private_key_file: ~/.ssh/id_rsa
+yandex_mirror: "mirror.yandex.ru/ubuntu"
+proxy_config: |
+  Acquire::http::Proxy "http://proxy.yandex.ru:3128";
+postgres_password: "11111"
+timezone: Europe/Moscow
+zabbix_server_host: "zabbix.ru-central1.internal"
+zabbix_version: "6.4"
+elastic_host: "elastic.ru-central1.internal"
