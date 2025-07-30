@@ -1,4 +1,4 @@
-# Дипломная работа по профессии «Системный администратор - Динейко Алексей
+# Дипломная работа по профессии «Системный администратор - Динейко Алексея
 
 ## 📋 Описание
 
@@ -45,16 +45,10 @@
   - HTTP-запросы к веб-серверам
 - Установлены threshold'ы (пороговые значения)
 
-📷 _Пример Zabbix dashboard:_
-![Zabbix Dashboard](./screenshots/zabbix_dashboard.png)
-
 ## 📑 Логирование (ELK)
 
 - Filebeat на веб-серверах отправляет nginx `access.log` и `error.log` в Elasticsearch
 - Kibana подключена к Elasticsearch
-
-📷 _Пример Kibana dashboard:_
-![Kibana](./screenshots/kibana.png)
 
 ## 💾 Резервное копирование
 
@@ -76,18 +70,20 @@ cd ansible
 python3 create_inventory.py > inventory/output.json
 ansible-playbook -i inventory/output.json site.yml
 ```
-3. **Создание снапшотов:**
 
 ## 📷 Скриншоты
 
 Zabbix
-
+![Скриншот-0](https://github.com/Neoju5t/diplom/blob/1849f611ad8efe7e6aeb303bc74bf274596d79f5/scr/%D0%A1%D0%BD%D0%B8%D0%BC%D0%BE%D0%BA%20%D1%8D%D0%BA%D1%80%D0%B0%D0%BD%D0%B0%202025-07-31%20%D0%B2%2000.52.50.png)
+![Скриншот-1](https://github.com/Neoju5t/diplom/blob/1849f611ad8efe7e6aeb303bc74bf274596d79f5/scr/%D0%A1%D0%BD%D0%B8%D0%BC%D0%BE%D0%BA%20%D1%8D%D0%BA%D1%80%D0%B0%D0%BD%D0%B0%202025-07-31%20%D0%B2%2000.51.08.png)
 Kibana
-
-Сайт через балансировщик (curl)
-
+![Скриншот-2](https://github.com/Neoju5t/diplom/blob/1849f611ad8efe7e6aeb303bc74bf274596d79f5/scr/%D0%A1%D0%BD%D0%B8%D0%BC%D0%BE%D0%BA%20%D1%8D%D0%BA%D1%80%D0%B0%D0%BD%D0%B0%202025-07-31%20%D0%B2%2000.36.13.png)
+![Скриншот-3](https://github.com/Neoju5t/diplom/blob/1849f611ad8efe7e6aeb303bc74bf274596d79f5/scr/%D0%A1%D0%BD%D0%B8%D0%BC%D0%BE%D0%BA%20%D1%8D%D0%BA%D1%80%D0%B0%D0%BD%D0%B0%202025-07-31%20%D0%B2%2000.42.55.png)
+Сайт через балансировщик (curl + браузер)
+![Скриншот-4](https://github.com/Neoju5t/diplom/blob/1849f611ad8efe7e6aeb303bc74bf274596d79f5/scr/%D0%A1%D0%BD%D0%B8%D0%BC%D0%BE%D0%BA%20%D1%8D%D0%BA%D1%80%D0%B0%D0%BD%D0%B0%202025-07-31%20%D0%B2%2000.28.50.png)
+![Скриншот-5](https://github.com/Neoju5t/diplom/blob/1849f611ad8efe7e6aeb303bc74bf274596d79f5/scr/%D0%A1%D0%BD%D0%B8%D0%BC%D0%BE%D0%BA%20%D1%8D%D0%BA%D1%80%D0%B0%D0%BD%D0%B0%202025-07-31%20%D0%B2%2000.54.33.png)
 Успешный terraform apply
-
+![Скриншот-6](https://github.com/Neoju5t/diplom/blob/1849f611ad8efe7e6aeb303bc74bf274596d79f5/scr/%D0%A1%D0%BD%D0%B8%D0%BC%D0%BE%D0%BA%20%D1%8D%D0%BA%D1%80%D0%B0%D0%BD%D0%B0%202025-07-31%20%D0%B2%2000.25.19.png)
 ## 📁 Дополнительно
 Используется .ru-central1.internal DNS для подключения
 
