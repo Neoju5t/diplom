@@ -3,7 +3,7 @@ resource "yandex_vpc_network" "diploma_net" {
   name = "diploma-network"
 }
 
-# Публичная подсеть
+# Публичная подсеть (зона A)
 resource "yandex_vpc_subnet" "public_subnet" {
   name           = "public-subnet"
   zone           = "ru-central1-a"
@@ -11,12 +11,21 @@ resource "yandex_vpc_subnet" "public_subnet" {
   v4_cidr_blocks = ["192.168.10.0/24"]
 }
 
-# Приватная подсеть
-resource "yandex_vpc_subnet" "private_subnet" {
-  name           = "private-subnet"
+# Приватная подсеть (зона B)
+resource "yandex_vpc_subnet" "private_subnet_b" {
+  name           = "private-subnet-b"
   zone           = "ru-central1-b"
   network_id     = yandex_vpc_network.diploma_net.id
   v4_cidr_blocks = ["192.168.20.0/24"]
+  route_table_id = yandex_vpc_route_table.nat_route.id
+}
+
+# Новая приватная подсеть (зона A)
+resource "yandex_vpc_subnet" "private_subnet_a" {
+  name           = "private-subnet-a"
+  zone           = "ru-central1-a"
+  network_id     = yandex_vpc_network.diploma_net.id
+  v4_cidr_blocks = ["192.168.30.0/24"]
   route_table_id = yandex_vpc_route_table.nat_route.id
 }
 
@@ -87,13 +96,13 @@ resource "yandex_compute_instance" "bastion" {
   }
 }
 
-# Веб-сервера (2 шт)
+# Веб-сервера (2 шт в разных зонах) - ИСПРАВЛЕНО
 resource "yandex_compute_instance" "web" {
   count       = 2
   name        = "web-${count.index}"
   hostname    = "web-${count.index}.ru-central1.internal"
   platform_id = "standard-v3"
-  zone        = "ru-central1-b"
+  zone        = count.index == 0 ? "ru-central1-a" : "ru-central1-b"
   
   resources {
     cores  = 2
@@ -107,9 +116,14 @@ resource "yandex_compute_instance" "web" {
     }
   }
 
+  # Все веб-серверы в приватных подсетях без внешних IP
   network_interface {
-    subnet_id          = yandex_vpc_subnet.private_subnet.id
-    nat                = false
+    subnet_id = (
+  count.index == 0 
+  ? yandex_vpc_subnet.private_subnet_a.id 
+  : yandex_vpc_subnet.private_subnet_b.id
+)
+    nat                = false  # Нет внешнего IP
     security_group_ids = [yandex_vpc_security_group.web_sg.id]
   }
 
@@ -139,7 +153,7 @@ resource "yandex_compute_instance" "elastic" {
   }
 
   network_interface {
-    subnet_id          = yandex_vpc_subnet.private_subnet.id
+    subnet_id          = yandex_vpc_subnet.private_subnet_b.id
     nat                = false
     security_group_ids = [yandex_vpc_security_group.elastic_sg.id]
   }
@@ -219,19 +233,19 @@ resource "yandex_vpc_security_group" "elastic_sg" {
   ingress {
     protocol       = "TCP"
     port           = 22
-    v4_cidr_blocks = ["192.168.10.0/24", "192.168.20.0/24"]
+    v4_cidr_blocks = ["192.168.10.0/24", "192.168.20.0/24", "192.168.30.0/24"]
   }
 
   ingress {
     protocol       = "TCP"
     port           = 9200
-    v4_cidr_blocks = ["192.168.10.0/24", "192.168.20.0/24"]
+    v4_cidr_blocks = ["192.168.10.0/24", "192.168.20.0/24", "192.168.30.0/24"]
   }
 
   ingress {
     protocol       = "TCP"
     port           = 9300
-    v4_cidr_blocks = ["192.168.20.0/24"]
+    v4_cidr_blocks = ["192.168.20.0/24", "192.168.30.0/24"]
   }
   
   ingress {
@@ -261,7 +275,7 @@ resource "yandex_vpc_security_group" "kibana_sg" {
   ingress {
     protocol       = "TCP"
     port           = 22
-    v4_cidr_blocks = ["192.168.10.0/24", "192.168.20.0/24"]
+    v4_cidr_blocks = ["192.168.10.0/24", "192.168.20.0/24", "192.168.30.0/24"]
   }
   
   ingress {
@@ -285,7 +299,7 @@ resource "yandex_vpc_security_group" "zabbix_sg" {
   ingress {
     protocol       = "TCP"
     port           = 22
-    v4_cidr_blocks = ["192.168.10.0/24", "192.168.20.0/24"]
+    v4_cidr_blocks = ["192.168.10.0/24", "192.168.20.0/24", "192.168.30.0/24"]
   }
 
   ingress {
@@ -306,7 +320,7 @@ resource "yandex_vpc_security_group" "zabbix_sg" {
   }
 }
 
-# Security Group для Балансировщика (исправленная)
+# Security Group для Балансировщика
 resource "yandex_vpc_security_group" "balancer_sg" {
   name        = "balancer-sg"
   network_id  = yandex_vpc_network.diploma_net.id
@@ -318,14 +332,14 @@ resource "yandex_vpc_security_group" "balancer_sg" {
     v4_cidr_blocks = ["0.0.0.0/0"]
   }
 
-  # Разрешаем health checks от Yandex (обязательное правило)
+  # Разрешаем health checks от Yandex
   ingress {
     protocol       = "TCP"
     port           = 80
     v4_cidr_blocks = ["198.18.235.0/24", "198.18.248.0/24"]
   }
 
-  # Разрешаем health checks на порт 30080 (дополнительно)
+  # Разрешаем health checks на порт 30080
   ingress {
     protocol       = "TCP"
     port           = 30080
@@ -338,7 +352,7 @@ resource "yandex_vpc_security_group" "balancer_sg" {
   }
 }
 
-# Security Group для Веб-серверов (добавляем правило для health checks)
+# Security Group для Веб-серверов
 resource "yandex_vpc_security_group" "web_sg" {
   name        = "web-sg"
   network_id  = yandex_vpc_network.diploma_net.id
@@ -350,7 +364,7 @@ resource "yandex_vpc_security_group" "web_sg" {
     security_group_id = yandex_vpc_security_group.balancer_sg.id
   }
 
-  # Разрешаем health checks от Yandex (добавлено)
+  # Разрешаем health checks от Yandex
   ingress {
     protocol       = "TCP"
     port           = 80
@@ -364,6 +378,7 @@ resource "yandex_vpc_security_group" "web_sg" {
     security_group_id = yandex_vpc_security_group.bastion_sg.id
   }
   
+  # Разрешаем доступ к Zabbix-агенту
   ingress {
     protocol       = "TCP"
     port           = 10050
@@ -381,17 +396,17 @@ resource "yandex_alb_http_router" "web_router" {
   name = "web-router"
 }
 
-# Целевая группа для балансировщика
+# Целевая группа для балансировщика - ИСПРАВЛЕНО
 resource "yandex_alb_target_group" "web_group" {
   name = "web-target-group"
   
   target {
-    subnet_id  = yandex_vpc_subnet.private_subnet.id
+    subnet_id  = yandex_vpc_subnet.private_subnet_a.id  # Для web-0 в зоне A
     ip_address = yandex_compute_instance.web[0].network_interface[0].ip_address
   }
 
   target {
-    subnet_id  = yandex_vpc_subnet.private_subnet.id
+    subnet_id  = yandex_vpc_subnet.private_subnet_b.id  # Для web-1 в зоне B
     ip_address = yandex_compute_instance.web[1].network_interface[0].ip_address
   }
 }
@@ -438,16 +453,16 @@ resource "yandex_alb_load_balancer" "balancer" {
   network_id         = yandex_vpc_network.diploma_net.id
   security_group_ids = [yandex_vpc_security_group.balancer_sg.id]
 
-allocation_policy {
-  location {
-    zone_id   = "ru-central1-a"
-    subnet_id = yandex_vpc_subnet.public_subnet.id
+  allocation_policy {
+    location {
+      zone_id   = "ru-central1-a"
+      subnet_id = yandex_vpc_subnet.public_subnet.id
+    }
+    location {
+      zone_id   = "ru-central1-b"
+      subnet_id = yandex_vpc_subnet.private_subnet_b.id 
+    }
   }
-  location {
-    zone_id   = "ru-central1-b"
-    subnet_id = yandex_vpc_subnet.private_subnet.id 
-  }
-}
 
   listener {
     name = "http-listener"
