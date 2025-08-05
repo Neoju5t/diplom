@@ -84,6 +84,8 @@ Kibana
 ![Скриншот-5](https://github.com/Neoju5t/diplom/blob/1849f611ad8efe7e6aeb303bc74bf274596d79f5/scr/%D0%A1%D0%BD%D0%B8%D0%BC%D0%BE%D0%BA%20%D1%8D%D0%BA%D1%80%D0%B0%D0%BD%D0%B0%202025-07-31%20%D0%B2%2000.54.33.png)
 Успешный terraform apply
 ![Скриншот-6](https://github.com/Neoju5t/diplom/blob/1849f611ad8efe7e6aeb303bc74bf274596d79f5/scr/%D0%A1%D0%BD%D0%B8%D0%BC%D0%BE%D0%BA%20%D1%8D%D0%BA%D1%80%D0%B0%D0%BD%D0%B0%202025-07-31%20%D0%B2%2000.25.19.png)
+Снимки дисков
+![Скриншот-7](
 ## 📁 Дополнительно
 Используется .ru-central1.internal DNS для подключения
 
