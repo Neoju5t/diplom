@@ -1,4 +1,4 @@
-# Дипломная работа по профессии «Системный администратор - Динейко Алексея
+# Дипломная работа по профессии «Системный администратор» - Динейко Алексея
 
 ## 📋 Описание
 
@@ -32,7 +32,7 @@
 
 ## 🛡 Безопасность
 
-- ВМ без внешнего IP, кроме bastion
+- ВМ без внешнего IP, кроме bastion, kibana и zabbix
 - ProxyCommand в Ansible для доступа через bastion
 - Настроены Security Groups
 - Токены и чувствительные данные не хранятся в git
@@ -74,18 +74,18 @@ ansible-playbook -i inventory/output.json site.yml
 ## 📷 Скриншоты
 
 Zabbix
-![Скриншот-0](https://github.com/Neoju5t/diplom/blob/1849f611ad8efe7e6aeb303bc74bf274596d79f5/scr/%D0%A1%D0%BD%D0%B8%D0%BC%D0%BE%D0%BA%20%D1%8D%D0%BA%D1%80%D0%B0%D0%BD%D0%B0%202025-07-31%20%D0%B2%2000.52.50.png)
-![Скриншот-1](https://github.com/Neoju5t/diplom/blob/1849f611ad8efe7e6aeb303bc74bf274596d79f5/scr/%D0%A1%D0%BD%D0%B8%D0%BC%D0%BE%D0%BA%20%D1%8D%D0%BA%D1%80%D0%B0%D0%BD%D0%B0%202025-07-31%20%D0%B2%2000.51.08.png)
+![Скриншот-0](https://github.com/Neoju5t/diplom/blob/7b6afd2a70291c634e897942e56a1a47691843f7/scr/%D0%A1%D0%BD%D0%B8%D0%BC%D0%BE%D0%BA%20%D1%8D%D0%BA%D1%80%D0%B0%D0%BD%D0%B0%202025-08-05%20%D0%B2%2017.52.10.png)
+![Скриншот-1](https://github.com/Neoju5t/diplom/blob/7b6afd2a70291c634e897942e56a1a47691843f7/scr/%D0%A1%D0%BD%D0%B8%D0%BC%D0%BE%D0%BA%20%D1%8D%D0%BA%D1%80%D0%B0%D0%BD%D0%B0%202025-08-05%20%D0%B2%2018.00.40.png)
 Kibana
-![Скриншот-2](https://github.com/Neoju5t/diplom/blob/1849f611ad8efe7e6aeb303bc74bf274596d79f5/scr/%D0%A1%D0%BD%D0%B8%D0%BC%D0%BE%D0%BA%20%D1%8D%D0%BA%D1%80%D0%B0%D0%BD%D0%B0%202025-07-31%20%D0%B2%2000.36.13.png)
-![Скриншот-3](https://github.com/Neoju5t/diplom/blob/1849f611ad8efe7e6aeb303bc74bf274596d79f5/scr/%D0%A1%D0%BD%D0%B8%D0%BC%D0%BE%D0%BA%20%D1%8D%D0%BA%D1%80%D0%B0%D0%BD%D0%B0%202025-07-31%20%D0%B2%2000.42.55.png)
+![Скриншот-2](https://github.com/Neoju5t/diplom/blob/7b6afd2a70291c634e897942e56a1a47691843f7/scr/%D0%A1%D0%BD%D0%B8%D0%BC%D0%BE%D0%BA%20%D1%8D%D0%BA%D1%80%D0%B0%D0%BD%D0%B0%202025-08-05%20%D0%B2%2017.52.16.png)
+![Скриншот-3](https://github.com/Neoju5t/diplom/blob/7b6afd2a70291c634e897942e56a1a47691843f7/scr/%D0%A1%D0%BD%D0%B8%D0%BC%D0%BE%D0%BA%20%D1%8D%D0%BA%D1%80%D0%B0%D0%BD%D0%B0%202025-08-05%20%D0%B2%2018.01.58.png)
 Сайт через балансировщик (curl + браузер)
-![Скриншот-4](https://github.com/Neoju5t/diplom/blob/1849f611ad8efe7e6aeb303bc74bf274596d79f5/scr/%D0%A1%D0%BD%D0%B8%D0%BC%D0%BE%D0%BA%20%D1%8D%D0%BA%D1%80%D0%B0%D0%BD%D0%B0%202025-07-31%20%D0%B2%2000.28.50.png)
-![Скриншот-5](https://github.com/Neoju5t/diplom/blob/1849f611ad8efe7e6aeb303bc74bf274596d79f5/scr/%D0%A1%D0%BD%D0%B8%D0%BC%D0%BE%D0%BA%20%D1%8D%D0%BA%D1%80%D0%B0%D0%BD%D0%B0%202025-07-31%20%D0%B2%2000.54.33.png)
+![Скриншот-4](https://github.com/Neoju5t/diplom/blob/7b6afd2a70291c634e897942e56a1a47691843f7/scr/%D0%A1%D0%BD%D0%B8%D0%BC%D0%BE%D0%BA%20%D1%8D%D0%BA%D1%80%D0%B0%D0%BD%D0%B0%202025-08-05%20%D0%B2%2018.03.41.png)
+![Скриншот-5](https://github.com/Neoju5t/diplom/blob/7b6afd2a70291c634e897942e56a1a47691843f7/scr/%D0%A1%D0%BD%D0%B8%D0%BC%D0%BE%D0%BA%20%D1%8D%D0%BA%D1%80%D0%B0%D0%BD%D0%B0%202025-08-05%20%D0%B2%2018.02.09.png)
 Успешный terraform apply
-![Скриншот-6](https://github.com/Neoju5t/diplom/blob/1849f611ad8efe7e6aeb303bc74bf274596d79f5/scr/%D0%A1%D0%BD%D0%B8%D0%BC%D0%BE%D0%BA%20%D1%8D%D0%BA%D1%80%D0%B0%D0%BD%D0%B0%202025-07-31%20%D0%B2%2000.25.19.png)
+![Скриншот-6](https://github.com/Neoju5t/diplom/blob/7b6afd2a70291c634e897942e56a1a47691843f7/scr/%D0%A1%D0%BD%D0%B8%D0%BC%D0%BE%D0%BA%20%D1%8D%D0%BA%D1%80%D0%B0%D0%BD%D0%B0%202025-08-05%20%D0%B2%2017.58.41.png)
 Снимки дисков
-![Скриншот-7](
+![Скриншот-7](https://github.com/Neoju5t/diplom/blob/7b6afd2a70291c634e897942e56a1a47691843f7/scr/%D0%A1%D0%BD%D0%B8%D0%BC%D0%BE%D0%BA%20%D1%8D%D0%BA%D1%80%D0%B0%D0%BD%D0%B0%202025-08-05%20%D0%B2%2018.06.30.png)
 ## 📁 Дополнительно
 Используется .ru-central1.internal DNS для подключения
 
