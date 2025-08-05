@@ -29,5 +29,5 @@ output "zabbix_ip" {
 
 output "elastic_ip" {
   value = yandex_compute_instance.elastic.network_interface[0].ip_address
-  depends_on = [yandex_vpc_subnet.private_subnet]
+  depends_on = [yandex_vpc_subnet.private_subnet_b]
 }
